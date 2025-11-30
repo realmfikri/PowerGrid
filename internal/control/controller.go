@@ -25,10 +25,11 @@ type Controller struct {
 
 // ControllerSnapshot captures a consistent view of controller state for logging or monitoring.
 type ControllerSnapshot struct {
-	ManualEnabled bool
-	SetpointMW    float64
-	Integral      float64
-	Error         float64
+	ManualEnabled    bool    `json:"manual_enabled"`
+	ManualSetpointMW float64 `json:"manual_setpoint_mw"`
+	SetpointMW       float64 `json:"setpoint_mw"`
+	Integral         float64 `json:"integral"`
+	Error            float64 `json:"error"`
 }
 
 // NewController builds a controller using control loop tuning and generator limits.
@@ -108,10 +109,11 @@ func (c *Controller) Snapshot() ControllerSnapshot {
 	defer c.mu.Unlock()
 
 	return ControllerSnapshot{
-		ManualEnabled: c.manualEnabled,
-		SetpointMW:    c.lastSetpoint,
-		Integral:      c.integral,
-		Error:         c.prevError,
+		ManualEnabled:    c.manualEnabled,
+		ManualSetpointMW: c.manualSetpoint,
+		SetpointMW:       c.lastSetpoint,
+		Integral:         c.integral,
+		Error:            c.prevError,
 	}
 }
 

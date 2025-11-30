@@ -29,15 +29,16 @@ type Simulation struct {
 
 // Snapshot exposes read-only state for external consumers such as the API.
 type Snapshot struct {
-	TickCount    int64     `json:"tick_count"`
-	Timestamp    time.Time `json:"timestamp"`
-	SolarMW      float64   `json:"solar_mw"`
-	WindMW       float64   `json:"wind_mw"`
-	GasMW        float64   `json:"gas_mw"`
-	SupplyMW     float64   `json:"supply_mw"`
-	DemandMW     float64   `json:"demand_mw"`
-	NetBalanceMW float64   `json:"net_balance_mw"`
-	FrequencyHz  float64   `json:"frequency_hz"`
+	TickCount    int64                      `json:"tick_count"`
+	Timestamp    time.Time                  `json:"timestamp"`
+	SolarMW      float64                    `json:"solar_mw"`
+	WindMW       float64                    `json:"wind_mw"`
+	GasMW        float64                    `json:"gas_mw"`
+	SupplyMW     float64                    `json:"supply_mw"`
+	DemandMW     float64                    `json:"demand_mw"`
+	NetBalanceMW float64                    `json:"net_balance_mw"`
+	FrequencyHz  float64                    `json:"frequency_hz"`
+	Controller   control.ControllerSnapshot `json:"controller"`
 }
 
 // NewSimulation constructs a simulation seeded with configuration and defaults.
@@ -79,6 +80,16 @@ func (s *Simulation) Snapshot() Snapshot {
 	defer s.mu.RUnlock()
 
 	return s.tick
+}
+
+// ControllerSettings returns static configuration for the control loop.
+func (s *Simulation) ControllerSettings() control.ControlConfig {
+        return s.cfg.Control
+}
+
+// GasSettings exposes the generator configuration for the dispatchable plant.
+func (s *Simulation) GasSettings() control.GasConfig {
+	return s.cfg.Generator.Gas
 }
 
 // Subscribe returns a channel that receives snapshots on each tick.
@@ -140,6 +151,7 @@ func (s *Simulation) step() {
 	s.tick.NetBalanceMW = net
 	s.tick.FrequencyHz = freq
 	controllerSnapshot := s.controller.Snapshot()
+	s.tick.Controller = controllerSnapshot
 
 	subscribers := append([]chan Snapshot(nil), s.subscribers...)
 	s.mu.Unlock()
