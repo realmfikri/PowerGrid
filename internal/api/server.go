@@ -1,9 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
+
+	"nhooyr.io/websocket"
 
 	"powergrid/internal/control"
 	"powergrid/internal/sim"
@@ -142,6 +146,11 @@ func (s *Server) handlePIDUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
+	if isWebsocketRequest(r) {
+		s.handleWebsocket(w, r)
+		return
+	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -174,6 +183,37 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleWebsocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	if err != nil {
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "stream ended")
+
+	ctx := r.Context()
+	ch := s.simulation.Subscribe(8)
+
+	if err := writeWebsocket(ctx, conn, s.simulation.Snapshot()); err != nil {
+		return
+	}
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case snap := <-ch:
+			if err := writeWebsocket(ctx, conn, snap); err != nil {
+				return
+			}
+		case <-ticker.C:
+			_ = conn.Ping(ctx)
+		}
+	}
+}
+
 func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
@@ -192,4 +232,18 @@ func writeSSE(w http.ResponseWriter, flusher http.Flusher, value any) {
 	_, _ = w.Write(data)
 	_, _ = w.Write([]byte("\n\n"))
 	flusher.Flush()
+}
+
+func writeWebsocket(ctx context.Context, conn *websocket.Conn, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return conn.Write(ctx, websocket.MessageText, data)
+}
+
+func isWebsocketRequest(r *http.Request) bool {
+	connection := strings.ToLower(r.Header.Get("Connection"))
+	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
+	return strings.Contains(connection, "upgrade") && upgrade == "websocket"
 }
