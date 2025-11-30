@@ -2,6 +2,7 @@ package sim
 
 import (
 	"context"
+	"log"
 	"math"
 	"math/rand"
 	"sync"
@@ -19,6 +20,7 @@ type Simulation struct {
 	rng         *rand.Rand
 	subscribers []chan Snapshot
 
+	controller  *control.Controller
 	solar       Solar
 	wind        Wind
 	gas         Gas
@@ -43,6 +45,7 @@ func NewSimulation(cfg control.Config) *Simulation {
 	sim := &Simulation{
 		cfg:         cfg,
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		controller:  control.NewController(cfg.Control, cfg.Generator.Gas),
 		solar:       NewSolar(cfg.Generator.Solar),
 		wind:        NewWind(cfg.Generator.Wind),
 		gas:         NewGas(cfg.Generator.Gas),
@@ -92,6 +95,21 @@ func (s *Simulation) Subscribe(buffer int) <-chan Snapshot {
 	return ch
 }
 
+// EnableManualGas switches control of the gas plant to manual mode.
+func (s *Simulation) EnableManualGas(setpointMW float64) {
+	s.controller.ManualEnable(setpointMW)
+}
+
+// DisableManualGas returns control to PID automation.
+func (s *Simulation) DisableManualGas() {
+	s.controller.ManualDisable()
+}
+
+// UpdateManualGasSetpoint adjusts the manual gas output target.
+func (s *Simulation) UpdateManualGasSetpoint(setpointMW float64) {
+	s.controller.ManualSetpoint(setpointMW)
+}
+
 func (s *Simulation) step() {
 	s.mu.Lock()
 	now := time.Now()
@@ -99,7 +117,15 @@ func (s *Simulation) step() {
 	wind := s.wind.Output(s.rng)
 	demand := s.houseDemand.Draw(now, s.rng)
 	renewable := solar + wind
-	gas := s.gas.Dispatch(demand - renewable)
+
+	measuredHz := s.tick.FrequencyHz
+	if measuredHz == 0 {
+		measuredHz = s.cfg.Control.TargetFrequencyHz
+	}
+
+	deficit := demand - renewable
+	gasSetpoint := s.controller.NextSetpoint(measuredHz, deficit, s.cfg.TickRate)
+	gas := s.gas.Setpoint(gasSetpoint)
 	supply := renewable + gas
 	net := supply - demand
 	freq := s.cfg.Grid.BaseFrequencyHz + net*s.cfg.Grid.SensitivityHz
@@ -113,9 +139,22 @@ func (s *Simulation) step() {
 	s.tick.DemandMW = demand
 	s.tick.NetBalanceMW = net
 	s.tick.FrequencyHz = freq
+	controllerSnapshot := s.controller.Snapshot()
 
 	subscribers := append([]chan Snapshot(nil), s.subscribers...)
 	s.mu.Unlock()
+
+	log.Printf(
+		"tick=%d freq=%.2fHz gas=%.2fMW manual=%t error=%.3f net=%.2fMW deficit=%.2fMW setpoint=%.2fMW",
+		s.tick.TickCount,
+		freq,
+		gas,
+		controllerSnapshot.ManualEnabled,
+		controllerSnapshot.Error,
+		net,
+		deficit,
+		controllerSnapshot.SetpointMW,
+	)
 
 	for _, ch := range subscribers {
 		select {
@@ -204,9 +243,8 @@ func NewGas(cfg control.GasConfig) Gas {
 	}
 }
 
-// Dispatch attempts to cover the provided deficit (MW) while respecting ramp limits.
-func (g *Gas) Dispatch(deficit float64) float64 {
-	target := deficit
+// Setpoint moves the gas plant towards a target output while respecting limits.
+func (g *Gas) Setpoint(target float64) float64 {
 	if target < g.minMW {
 		target = g.minMW
 	}
@@ -226,6 +264,11 @@ func (g *Gas) Dispatch(deficit float64) float64 {
 	}
 	g.current += delta
 	return g.current
+}
+
+// Dispatch attempts to cover the provided deficit (MW) while respecting ramp limits.
+func (g *Gas) Dispatch(deficit float64) float64 {
+	return g.Setpoint(deficit)
 }
 
 // HouseDemand models aggregated stochastic residential demand.
