@@ -11,7 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import './App.css'
-import type { ControllerSettingsResponse, SimulationSnapshot } from './types/simulation'
+import type { ControllerSettingsResponse, ManualGasRequest, PIDUpdateRequest, SimulationSnapshot } from './types/simulation'
 
 const placeholderSnapshot: SimulationSnapshot = {
   tick_count: 482,
@@ -81,12 +81,20 @@ function App() {
   const [controllerSettings, setControllerSettings] = useState<ControllerSettingsResponse>(placeholderController)
   const [history, setHistory] = useState<SimulationSnapshot[]>([placeholderSnapshot])
   const [flash, setFlash] = useState(false)
+  const [manualSetpoint, setManualSetpoint] = useState<number>(placeholderSnapshot.controller.manual_setpoint_mw)
+  const [pidDraft, setPidDraft] = useState(controllerSettings.control.pid)
+  const [targetDraft, setTargetDraft] = useState(controllerSettings.control.target_frequency_hz)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     fetch('/api/controller')
       .then((res) => res.json())
       .then((data: ControllerSettingsResponse) => {
         setControllerSettings(data)
+        setManualSetpoint(data.controller.manual_setpoint_mw)
+        setPidDraft(data.control.pid)
+        setTargetDraft(data.control.target_frequency_hz)
       })
       .catch(() => {
         // keep placeholder settings
@@ -129,6 +137,15 @@ function App() {
     return undefined
   }, [snapshot.frequency_hz])
 
+  useEffect(() => {
+    setManualSetpoint(snapshot.controller.manual_setpoint_mw)
+  }, [snapshot.controller.manual_setpoint_mw])
+
+  useEffect(() => {
+    setPidDraft(controllerSettings.control.pid)
+    setTargetDraft(controllerSettings.control.target_frequency_hz)
+  }, [controllerSettings.control])
+
   const highlights = useMemo(
     () => [
       {
@@ -161,8 +178,80 @@ function App() {
 
   const recentEvents = useMemo(() => history.slice(-6).reverse(), [history])
 
+  const recentError = useMemo(() => {
+    const window = history.slice(-8)
+    if (!window.length) return snapshot.controller.error
+    const total = window.reduce((acc, point) => acc + point.controller.error, 0)
+    return total / window.length
+  }, [history, snapshot.controller.error])
+
   const freqColor = frequencyColor(snapshot.frequency_hz, controllerSettings.control.target_frequency_hz)
   const rotation = gaugeRotation(snapshot.frequency_hz, controllerSettings.control.target_frequency_hz)
+
+  const clampSetpoint = (value: number) =>
+    Math.min(Math.max(value, controllerSettings.gas.min_mw), controllerSettings.gas.capacity_mw)
+
+  const updateManualControl = async (payload: ManualGasRequest) => {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/controller/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error('Manual control update failed')
+      const data: SimulationSnapshot['controller'] = await res.json()
+      setSnapshot((prev) => ({ ...prev, controller: data }))
+      setControllerSettings((prev) => ({ ...prev, controller: data }))
+      setStatusMessage('Manual control updated')
+    } catch (err) {
+      setStatusMessage((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const applyPIDConfig = async () => {
+    setBusy(true)
+    setStatusMessage(null)
+    const payload: PIDUpdateRequest = {
+      kp: pidDraft.kp,
+      ki: pidDraft.ki,
+      kd: pidDraft.kd,
+      integral_min: pidDraft.integral_min,
+      integral_max: pidDraft.integral_max,
+      target_frequency_hz: targetDraft,
+    }
+    try {
+      const res = await fetch('/api/controller/pid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error('PID update failed')
+      const data: { control: ControllerSettingsResponse['control'] } = await res.json()
+      setControllerSettings((prev) => ({ ...prev, control: data.control }))
+      setPidDraft(data.control.pid)
+      setTargetDraft(data.control.target_frequency_hz)
+      setStatusMessage('PID tuning applied')
+    } catch (err) {
+      setStatusMessage((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handlePanic = async (mode: 'cut' | 'boost') => {
+    const setpoint = mode === 'cut' ? controllerSettings.gas.min_mw : controllerSettings.gas.capacity_mw
+    const label = mode === 'cut' ? 'cut gas output to minimum' : 'max out gas output for recovery'
+    const confirm = window.confirm(`Are you sure you want to ${label}? This will enable manual control.`)
+    if (!confirm) return
+
+    const clamped = clampSetpoint(setpoint)
+    setManualSetpoint(clamped)
+    await updateManualControl({ enable: true, setpoint_mw: clamped })
+    setStatusMessage(mode === 'cut' ? 'Manual cut applied' : 'Gas boosted to max')
+  }
 
   return (
     <div className={`app-shell ${flash ? 'flash' : ''}`}>
@@ -322,8 +411,8 @@ function App() {
                 <p className="control-value">{snapshot.controller.manual_enabled ? 'Manual' : 'PID'}</p>
                 <p className="control-helper">
                   {snapshot.controller.manual_enabled
-                    ? `Setpoint ${snapshot.controller.manual_setpoint_mw.toFixed(1)} MW`
-                    : `PID output ${snapshot.controller.setpoint_mw.toFixed(1)} MW`}
+                    ? `Manual target ${snapshot.controller.manual_setpoint_mw.toFixed(1)} MW`
+                    : `PID setpoint ${snapshot.controller.setpoint_mw.toFixed(1)} MW`}
                 </p>
               </div>
               <div className="control-tile">
@@ -332,14 +421,149 @@ function App() {
                   kp {controllerSettings.control.pid.kp}, ki {controllerSettings.control.pid.ki}, kd{' '}
                   {controllerSettings.control.pid.kd}
                 </p>
-                <p className="control-helper">Integral {snapshot.controller.integral.toFixed(2)}</p>
+                <p className="control-helper">Integral {snapshot.controller.integral.toFixed(2)} · Target {controllerSettings.control.target_frequency_hz.toFixed(2)} Hz</p>
               </div>
               <div className="control-tile">
                 <p className="control-label">Frequency error</p>
                 <p className="control-value">{snapshot.controller.error.toFixed(3)}</p>
-                <p className="control-helper">Target {controllerSettings.control.target_frequency_hz.toFixed(2)} Hz</p>
+                <p className="control-helper">Recent avg {recentError.toFixed(3)}</p>
               </div>
             </div>
+            <div className="controller-controls">
+              <div className="control-card">
+                <div className="control-card-head">
+                  <div>
+                    <p className="control-label">Manual vs auto</p>
+                    <p className="control-helper">Toggle dispatch ownership and steer gas output with a slider.</p>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={snapshot.controller.manual_enabled}
+                      onChange={(e) =>
+                        updateManualControl({ enable: e.target.checked, setpoint_mw: manualSetpoint }).then(() =>
+                          setStatusMessage(e.target.checked ? 'Manual override enabled' : 'Returned to PID control'),
+                        )
+                      }
+                      disabled={busy}
+                    />
+                    <span className="slider-toggle" />
+                  </label>
+                </div>
+                <div className="setpoint-row">
+                  <input
+                    type="range"
+                    min={controllerSettings.gas.min_mw}
+                    max={controllerSettings.gas.capacity_mw}
+                    value={manualSetpoint}
+                    step={1}
+                    onChange={(e) => setManualSetpoint(clampSetpoint(Number(e.target.value)))}
+                  />
+                  <input
+                    type="number"
+                    min={controllerSettings.gas.min_mw}
+                    max={controllerSettings.gas.capacity_mw}
+                    value={manualSetpoint}
+                    onChange={(e) => setManualSetpoint(clampSetpoint(Number(e.target.value)))}
+                  />
+                  <span className="units">MW</span>
+                </div>
+                <div className="action-row">
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => updateManualControl({ enable: true, setpoint_mw: manualSetpoint })}
+                    disabled={busy}
+                  >
+                    Apply manual setpoint
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => updateManualControl({ enable: false })}
+                    disabled={busy}
+                  >
+                    Return to PID
+                  </button>
+                </div>
+              </div>
+
+              <div className="control-card">
+                <div className="control-card-head">
+                  <div>
+                    <p className="control-label">PID gains</p>
+                    <p className="control-helper">Edit kp/ki/kd and integral bounds, then save to apply.</p>
+                  </div>
+                  <span className="pill subtle">Target {targetDraft.toFixed(2)} Hz</span>
+                </div>
+                <div className="pid-grid">
+                  {(
+                    [
+                      ['kp', 'Proportional'],
+                      ['ki', 'Integral'],
+                      ['kd', 'Derivative'],
+                      ['integral_min', 'Integral min'],
+                      ['integral_max', 'Integral max'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key} className="field">
+                      <span>{label}</span>
+                      <input
+                        type="number"
+                        value={pidDraft[key]}
+                        step="0.01"
+                        onChange={(e) =>
+                          setPidDraft((prev) => ({
+                            ...prev,
+                            [key]: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                  <label className="field">
+                    <span>Target Hz</span>
+                    <input
+                      type="number"
+                      value={targetDraft}
+                      step="0.01"
+                      onChange={(e) => setTargetDraft(Number(e.target.value))}
+                    />
+                  </label>
+                </div>
+                <div className="action-row">
+                  <button type="button" className="primary" onClick={applyPIDConfig} disabled={busy}>
+                    Save & apply PID
+                  </button>
+                  <button type="button" className="secondary" onClick={() => setPidDraft(controllerSettings.control.pid)} disabled={busy}>
+                    Reset values
+                  </button>
+                </div>
+              </div>
+
+              <div className="control-card danger">
+                <div className="control-card-head">
+                  <div>
+                    <p className="control-label">Panic overrides</p>
+                    <p className="control-helper">Emergency actions confirm before enabling manual control.</p>
+                  </div>
+                  <span className="pill alert">Confirm first</span>
+                </div>
+                <div className="panic-actions">
+                  <button type="button" className="secondary" onClick={() => handlePanic('cut')} disabled={busy}>
+                    Cut gas output
+                  </button>
+                  <button type="button" className="primary" onClick={() => handlePanic('boost')} disabled={busy}>
+                    Max-out gas
+                  </button>
+                </div>
+                <p className="control-helper">
+                  Panic buttons will flip to manual control, either dropping to minimum dispatchable load or driving the plant
+                  to its rated capacity.
+                </p>
+              </div>
+            </div>
+            {statusMessage && <div className="status-banner">{statusMessage}</div>}
           </article>
 
           <article className="panel">
