@@ -3,6 +3,22 @@
   background: radial-gradient(circle at 20% 20%, #14202e 0, #0c121b 35%, #0a0f16 100%);
   color: #e8edf5;
   padding: 24px 32px 48px;
+  transition: background 120ms ease;
+}
+
+.app-shell.flash {
+  animation: screen-flash 0.35s ease;
+}
+
+@keyframes screen-flash {
+  0% {
+    background: radial-gradient(circle at 20% 20%, #2b2330 0, #0c121b 35%, #0a0f16 100%);
+    box-shadow: 0 0 120px rgba(255, 123, 123, 0.25) inset;
+  }
+  100% {
+    background: radial-gradient(circle at 20% 20%, #14202e 0, #0c121b 35%, #0a0f16 100%);
+    box-shadow: none;
+  }
 }
 
 .top-bar {
@@ -209,26 +225,38 @@ button.secondary:hover {
   margin: 0;
 }
 
-.placeholder-chip {
+.live-chip {
   border-radius: 999px;
   padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px dashed rgba(255, 255, 255, 0.22);
+  background: rgba(255, 114, 94, 0.2);
+  border: 1px solid rgba(255, 114, 94, 0.5);
   font-size: 12px;
-  color: #cbd5e5;
+  color: #ffb59f;
   white-space: nowrap;
+  box-shadow: 0 0 14px rgba(255, 114, 94, 0.25);
 }
 
-.chart-placeholder {
-  margin-top: 16px;
-  display: grid;
-  gap: 8px;
+.pill {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(47, 124, 243, 0.15);
+  border: 1px solid rgba(47, 124, 243, 0.35);
+  font-size: 12px;
+  color: #c6d7f7;
 }
 
-.chart-placeholder .bar {
-  height: 10px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, rgba(76, 241, 192, 0.3), rgba(47, 124, 243, 0.45));
+.pill.subtle {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #d5e0f5;
+}
+
+.chart-area {
+  margin-top: 12px;
+  background: radial-gradient(circle at 30% 20%, rgba(76, 241, 192, 0.05), rgba(47, 124, 243, 0.05));
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 6px;
 }
 
 .gauge {
@@ -238,12 +266,22 @@ button.secondary:hover {
 }
 
 .gauge-ring {
-  width: 180px;
-  height: 180px;
+  width: 200px;
+  height: 200px;
   border-radius: 50%;
   position: relative;
   border: 10px solid rgba(47, 124, 243, 0.35);
   box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.gauge-band {
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
 }
 
 .gauge-needle {
@@ -251,10 +289,11 @@ button.secondary:hover {
   bottom: 50%;
   left: 50%;
   width: 4px;
-  height: 60px;
+  height: 70px;
   background: linear-gradient(180deg, #f5c87a, #f28f3b);
   transform-origin: bottom center;
   border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .gauge-center {
@@ -272,6 +311,26 @@ button.secondary:hover {
 .gauge-footnote {
   margin-top: 10px;
   color: #9fb4d3;
+}
+
+.mode-pill {
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.mode-pill.manual {
+  background: rgba(255, 123, 123, 0.15);
+  border-color: rgba(255, 123, 123, 0.5);
+  color: #ffcbcb;
+}
+
+.mode-pill.pid {
+  background: rgba(124, 240, 163, 0.18);
+  border-color: rgba(124, 240, 163, 0.55);
+  color: #d9ffe7;
 }
 
 .controls-grid {
@@ -302,6 +361,62 @@ button.secondary:hover {
 
 .control-helper {
   margin: 6px 0 0;
+  color: #9fb4d3;
+  font-size: 13px;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.status-card {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.status-card.demand {
+  background: rgba(255, 159, 123, 0.08);
+  border-color: rgba(255, 159, 123, 0.35);
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-label {
+  margin: 0;
+  color: #cbd5e5;
+  font-weight: 700;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #5bd8ff;
+  box-shadow: 0 0 10px rgba(91, 216, 255, 0.4);
+}
+
+.status-dot.demand {
+  background: #ff9f7b;
+  box-shadow: 0 0 12px rgba(255, 159, 123, 0.4);
+}
+
+.status-value {
+  margin: 8px 0 2px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.status-detail {
+  margin: 0;
   color: #9fb4d3;
   font-size: 13px;
 }
