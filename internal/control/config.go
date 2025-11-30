@@ -10,6 +10,9 @@ type Config struct {
 	// Generator holds parameters for power generation behaviour.
 	Generator GeneratorConfig
 
+	// Control tunes the closed-loop controller for dispatchable generation.
+	Control ControlConfig
+
 	// Grid determines how the simulated frequency responds to imbalances.
 	Grid GridConfig
 }
@@ -62,6 +65,21 @@ type GridConfig struct {
 	SensitivityHz   float64
 }
 
+// ControlConfig defines parameters for the PID controller and manual override behaviour.
+type ControlConfig struct {
+	TargetFrequencyHz float64
+	PID               PIDConfig
+}
+
+// PIDConfig configures the feedback controller gains and bounds.
+type PIDConfig struct {
+	Kp          float64
+	Ki          float64
+	Kd          float64
+	IntegralMin float64
+	IntegralMax float64
+}
+
 // Defaults provides sensible starting values for local development.
 func Defaults() Config {
 	return Config{
@@ -88,6 +106,16 @@ func Defaults() Config {
 				Variance:      0.15,
 				PeakHour:      19.0,
 				PeakHourWidth: 3.0,
+			},
+		},
+		Control: ControlConfig{
+			TargetFrequencyHz: 60.0,
+			PID: PIDConfig{
+				Kp:          0.8,
+				Ki:          0.3,
+				Kd:          0.05,
+				IntegralMin: -80,
+				IntegralMax: 80,
 			},
 		},
 		Grid: GridConfig{
