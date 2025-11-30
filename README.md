@@ -4,6 +4,15 @@ PowerGrid is a small simulation of a regional grid that exposes live telemetry o
 
 ## Getting started
 
+### Containers
+
+- **Development**: `docker compose up --build` runs the Go API with hot reload via Air on port **8080** and the Vite dev server on **5173**. Set `SIM_TICK_RATE`, `SOLAR_PEAK_MW`, `WIND_BASE_MW`, `GAS_CAPACITY_MW`, `GAS_MIN_MW`, or `GAS_RAMP_MW` to tune the simulation without recompiling. `VITE_API_PROXY` controls which backend the frontend proxies to (defaults to `http://localhost:8080`).
+- **Production images**: `Dockerfile.backend` builds a minimal Go image (exposes **8080**) and `web/Dockerfile` builds static assets into an nginx image (exposes **80**). Use the `production` target for multi-stage builds.
+
+Typical CPU load for the backend is well under one vCPU at the default 1s tick rate; decreasing `SIM_TICK_RATE` increases work proportionally. Expect low memory pressure (<100MB) under default settings.
+
+Monitoring/logging: container logs already emit per-tick summaries. Ship them to your log aggregator and set alerts on frequency error (`frequency_hz` drift) or controller saturation (`gas_mw` nearing `capacity_mw`). Basic container health checks can poll `/status` for liveness.
+
 ### Backend
 
 The backend is a Go service that advances the simulation in discrete ticks and serves API endpoints under `/status`, `/controller`, and `/stream`.
