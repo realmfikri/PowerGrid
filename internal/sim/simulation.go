@@ -84,7 +84,7 @@ func (s *Simulation) Snapshot() Snapshot {
 
 // ControllerSettings returns static configuration for the control loop.
 func (s *Simulation) ControllerSettings() control.ControlConfig {
-        return s.cfg.Control
+	return s.cfg.Control
 }
 
 // GasSettings exposes the generator configuration for the dispatchable plant.
@@ -119,6 +119,18 @@ func (s *Simulation) DisableManualGas() {
 // UpdateManualGasSetpoint adjusts the manual gas output target.
 func (s *Simulation) UpdateManualGasSetpoint(setpointMW float64) {
 	s.controller.ManualSetpoint(setpointMW)
+}
+
+// UpdatePIDConfig replaces the controller PID tuning values and persists them to the config.
+func (s *Simulation) UpdatePIDConfig(cfg control.PIDConfig) {
+	s.controller.UpdatePID(cfg)
+	s.cfg.Control.PID = cfg
+}
+
+// UpdateTargetFrequency adjusts the desired grid frequency for the controller loop.
+func (s *Simulation) UpdateTargetFrequency(target float64) {
+	s.controller.UpdateTarget(target)
+	s.cfg.Control.TargetFrequencyHz = target
 }
 
 func (s *Simulation) step() {

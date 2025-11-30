@@ -103,6 +103,23 @@ func (c *Controller) ManualSetpoint(setpointMW float64) {
 	c.manualSetpoint = setpointMW
 }
 
+// UpdatePID swaps the PID tuning values used by the controller.
+func (c *Controller) UpdatePID(cfg PIDConfig) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.pid = cfg
+	c.integral = clamp(c.integral, c.pid.IntegralMin, c.pid.IntegralMax)
+}
+
+// UpdateTarget adjusts the desired grid frequency for the loop.
+func (c *Controller) UpdateTarget(targetHz float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.targetHz = targetHz
+}
+
 // Snapshot returns a point-in-time view of the controller internals.
 func (c *Controller) Snapshot() ControllerSnapshot {
 	c.mu.Lock()

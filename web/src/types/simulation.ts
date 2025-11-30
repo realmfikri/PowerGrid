@@ -80,3 +80,12 @@ export interface ManualGasRequest {
   enable?: boolean
   setpoint_mw?: number
 }
+
+export interface PIDUpdateRequest {
+  kp?: number
+  ki?: number
+  kd?: number
+  integral_min?: number
+  integral_max?: number
+  target_frequency_hz?: number
+}

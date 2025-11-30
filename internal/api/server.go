@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"powergrid/internal/control"
 	"powergrid/internal/sim"
 )
 
@@ -25,6 +26,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/controller", s.handleController)
+	mux.HandleFunc("/controller/pid", s.handlePIDUpdate)
 	mux.HandleFunc("/controller/manual", s.handleManualGas)
 	mux.HandleFunc("/stream", s.handleStream)
 
@@ -87,6 +89,56 @@ func (s *Server) handleManualGas(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, s.simulation.Snapshot().Controller)
+}
+
+func (s *Server) handlePIDUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	current := s.simulation.ControllerSettings()
+	pid := current.PID
+
+	var req struct {
+		Kp                *float64 `json:"kp"`
+		Ki                *float64 `json:"ki"`
+		Kd                *float64 `json:"kd"`
+		IntegralMin       *float64 `json:"integral_min"`
+		IntegralMax       *float64 `json:"integral_max"`
+		TargetFrequencyHz *float64 `json:"target_frequency_hz"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	if req.Kp != nil {
+		pid.Kp = *req.Kp
+	}
+	if req.Ki != nil {
+		pid.Ki = *req.Ki
+	}
+	if req.Kd != nil {
+		pid.Kd = *req.Kd
+	}
+	if req.IntegralMin != nil {
+		pid.IntegralMin = *req.IntegralMin
+	}
+	if req.IntegralMax != nil {
+		pid.IntegralMax = *req.IntegralMax
+	}
+
+	s.simulation.UpdatePIDConfig(pid)
+
+	if req.TargetFrequencyHz != nil {
+		s.simulation.UpdateTargetFrequency(*req.TargetFrequencyHz)
+	}
+
+	writeJSON(w, struct {
+		Control control.ControlConfig `json:"control"`
+	}{Control: s.simulation.ControllerSettings()})
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
