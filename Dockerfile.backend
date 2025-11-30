@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.22-bookworm AS base
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+# Development stage with hot reload
+FROM golang:1.22-bookworm AS dev
+WORKDIR /app
+RUN go install github.com/cosmtrek/air@v1.49.0
+COPY --from=base /go/pkg /go/pkg
+COPY . .
+CMD ["air", "-c", ".air.toml"]
+
+# Production build stage
+FROM base AS build
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/powergrid ./cmd/server
+
+# Minimal runtime image
+FROM gcr.io/distroless/static-debian12 AS production
+ENV PORT=8080
+EXPOSE 8080
+COPY --from=build /bin/powergrid /bin/powergrid
+USER nonroot:nonroot
+ENTRYPOINT ["/bin/powergrid"]

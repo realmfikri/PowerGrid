@@ -1,0 +1,36 @@
+version: "3.9"
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: dev
+    volumes:
+      - ./:/app
+    ports:
+      - "8080:8080"
+    environment:
+      - SIM_TICK_RATE=1s
+      - SOLAR_PEAK_MW=80
+      - WIND_BASE_MW=40
+      - GAS_CAPACITY_MW=140
+      - GAS_MIN_MW=20
+      - GAS_RAMP_MW=12
+    command: ["air", "-c", ".air.toml"]
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: dev
+    working_dir: /app
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_PROXY=http://backend:8080
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]

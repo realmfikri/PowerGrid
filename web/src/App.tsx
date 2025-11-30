@@ -86,6 +86,7 @@ function App() {
   const [targetDraft, setTargetDraft] = useState(controllerSettings.control.target_frequency_hz)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const apiProxy = import.meta.env.VITE_API_PROXY || 'http://localhost:8080'
 
   useEffect(() => {
     fetch('/api/controller')
@@ -270,7 +271,7 @@ function App() {
             </a>
           ))}
         </nav>
-        <div className="env-pill">Dev proxy → http://localhost:8080</div>
+        <div className="env-pill">Dev proxy → {apiProxy}</div>
       </header>
 
       <main className="content">

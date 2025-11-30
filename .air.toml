@@ -1,0 +1,15 @@
+root = "."
+tmp_dir = "./tmp"
+
+[build]
+  cmd = "go build -o ./tmp/powergrid ./cmd/server"
+  bin = "./tmp/powergrid"
+  delay = 1000
+  exclude_dir = ["tmp", "web", ".git"]
+  include_ext = ["go"]
+
+[log]
+  time = true
+
+[dev]
+  restart = true
